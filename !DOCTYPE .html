@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monthly Scheduler</title>
+    <style>
+        .calendar {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 5px;
+        }
+        .day-cell {
+            padding: 10px;
+            border: 1px solid #000;
+            text-align: center;
+            cursor: pointer;
+        }
+        .selected {
+            background-color: #a0c4ff;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header button {
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .schedule-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .schedule-item button {
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>スケジュール管理アプリ</h1>
+    <div class="header">
+        <button onclick="changeMonth(-1)">前の月</button>
+        <h2 id="month-title"></h2>
+        <button onclick="changeMonth(1)">次の月</button>
+    </div>
+    <div id="calendar" class="calendar"></div>
+    <div id="schedule-section" style="display:none;">
+        <h2 id="selected-day-title"></h2>
+        <ul id="schedule-list"></ul>
+        <input type="text" id="schedule-input" placeholder="やることを追加">
+        <input type="time" id="schedule-time">
+        <button onclick="addSchedule()">追加</button>
+    </div>
+
+    <script>
+        let currentMonth = new Date();
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadCalendar(currentMonth);
+            loadSchedules();
+        });
+
+        function loadCalendar(date) {
+            const calendar = document.getElementById('calendar');
+            calendar.innerHTML = ''; // カレンダーをリセット
+
+            const daysOfWeek = ['日', '月', '火', '水', '木', '金', '土'];
+            const year = date.getFullYear();
+            const month = date.getMonth();
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+
+            // タイトルを更新
+            const monthTitle = document.getElementById('month-title');
+            monthTitle.textContent = `${year}年 ${month + 1}月`;
+
+            // 曜日のヘッダーを追加
+            daysOfWeek.forEach(day => {
+                const dayHeader = document.createElement('div');
+                dayHeader.textContent = day;
+                dayHeader.style.fontWeight = 'bold';
+                calendar.appendChild(dayHeader);
+            });
+
+            // カレンダーの空白を追加（月初めの曜日まで）
+            for (let i = 0; i < firstDay.getDay(); i++) {
+                const emptyCell = document.createElement('div');
+                calendar.appendChild(emptyCell);
+            }
+
+            // 日付を追加
+            for (let day = 1; day <= lastDay.getDate(); day++) {
+                const dayCell = document.createElement('div');
+                dayCell.classList.add('day-cell');
+                const cellDate = new Date(year, month, day, 12, 0, 0); // 正確な日付を取得するために時間を12時に設定
+                dayCell.dataset.date = cellDate.toISOString().split('T')[0];
+                dayCell.textContent = day;
+
+                dayCell.addEventListener('click', function() {
+                    selectDay(this.dataset.date);
+                });
+
+                calendar.appendChild(dayCell);
+            }
+        }
+
+        function changeMonth(offset) {
+            currentMonth.setMonth(currentMonth.getMonth() + offset);
+            loadCalendar(currentMonth);
+        }
+
+        function selectDay(date) {
+            const selectedDate = new Date(date + 'T12:00:00'); // タイムゾーンのズレを防ぐために時間を12時に設定
+            const dayOfWeek = selectedDate.toLocaleDateString('ja-JP', { weekday: 'long' });
+            document.getElementById('selected-day-title').textContent = `${dayOfWeek} (${date}) のやること`;
+            document.getElementById('schedule-section').style.display = 'block';
+            document.getElementById('schedule-list').innerHTML = '';
+            document.getElementById('schedule-input').dataset.date = date;
+
+            loadSchedulesForDay(date);
+
+            // すべてのセルから選択クラスを削除
+            document.querySelectorAll('.day-cell').forEach(cell => {
+                cell.classList.remove('selected');
+            });
+
+            // 選択したセルに選択クラスを追加
+            document.querySelector(`.day-cell[data-date='${date}']`).classList.add('selected');
+        }
+
+        function addSchedule() {
+            const input = document.getElementById('schedule-input');
+            const timeInput = document.getElementById('schedule-time');
+            const schedule = input.value;
+            const time = timeInput.value;
+            const date = input.dataset.date;
+
+            if (schedule && time) {
+                const list = document.getElementById('schedule-list');
+                const listItem = document.createElement('li');
+                listItem.classList.add('schedule-item');
+                listItem.textContent = `${time} - ${schedule}`;
+
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = '削除';
+                deleteButton.onclick = function() {
+                    deleteSchedule(date, schedule, time);
+                };
+
+                const editButton = document.createElement('button');
+                editButton.textContent = '編集';
+                editButton.onclick = function() {
+                    editSchedule(date, schedule, time);
+                };
+
+                listItem.appendChild(editButton);
+                listItem.appendChild(deleteButton);
+                list.appendChild(listItem);
+
+                input.value = '';
+                timeInput.value = '';
+                saveSchedules(date, schedule, time);
+            }
+        }
+
+        function deleteSchedule(date, schedule, time) {
+            let schedules = JSON.parse(localStorage.getItem('schedules')) || {};
+            if (schedules[date]) {
+                schedules[date] = schedules[date].filter(item => item.schedule !== schedule || item.time !== time);
+                localStorage.setItem('schedules', JSON.stringify(schedules));
+                loadSchedulesForDay(date);
+            }
+        }
+
+        function editSchedule(date, schedule, time) {
+            const newSchedule = prompt('スケジュールを編集:', schedule);
+            const newTime = prompt('時間を編集:', time);
+            if (newSchedule && newTime) {
+                deleteSchedule(date, schedule, time);
+                saveSchedules(date, newSchedule, newTime);
+                loadSchedulesForDay(date);
+            }
+        }
+
+        function saveSchedules(date, schedule, time) {
+            let schedules = JSON.parse(localStorage.getItem('schedules')) || {};
+            if (!schedules[date]) {
+                schedules[date] = [];
+            }
+            schedules[date].push({ schedule, time });
+            localStorage.setItem('schedules', JSON.stringify(schedules));
+        }
+
+        function loadSchedules() {
+            let schedules = JSON.parse(localStorage.getItem('schedules')) || {};
+            for (let date in schedules) {
+                schedules[date].forEach(item => {
+                    console.log(`Loaded schedule: ${item.time} - ${item.schedule} on ${date}`);
+                });
+            }
+        }
+
+        function loadSchedulesForDay(date) {
+            let schedules = JSON.parse(localStorage.getItem('schedules')) || {};
+            const list = document.getElementById('schedule-list');
+            list.innerHTML = ''; // リストをリセット
+            if (schedules[date]) {
+                schedules[date].forEach(item => {
+                    const listItem = document.createElement('li');
+                    listItem.classList.add('schedule-item');
+                    listItem.textContent = `${item.time} - ${item.schedule}`;
+
+                    const deleteButton = document.createElement('button');
+                    deleteButton.textContent = '削除';
+                    deleteButton.onclick = function() {
+                        deleteSchedule(date, item.schedule, item.time);
+                    };
+
+                    const editButton = document.createElement('button');
+                    editButton.textContent = '編集';
+                    editButton.onclick = function() {
+                        editSchedule(date, item.schedule, item.time);
+                    };
+
+                    listItem.appendChild(editButton);
+                    listItem.appendChild(deleteButton);
+                    list.appendChild(listItem);
+                });
+            }
+        }
+    </script>
+</body>
+</html>
